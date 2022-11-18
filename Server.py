@@ -6,6 +6,7 @@ from dataclasses import dataclass, field, asdict
 import threading
 import json
 from enum import Enum
+from queue import Queue
 
 @dataclass
 class Session:
@@ -106,7 +107,7 @@ class Message(dict):
     
     def encode(self) -> str:
         encString:str = ""
-        encString += "{}\n".format(self.type)
+        #encString += "{}\n".format(self.type)
         #encString += "message: {}\n".format(msg.message)# TODO: encode to base64
         encString += "{}\n".format(self.toJSON())
         encString += "\n"
@@ -141,7 +142,7 @@ messageTypes = ["HELLO","MESSAGE","BYE","PING"]
 class ChatHandler(socketserver.BaseRequestHandler):
     clientInfo = dict()
     sessions = Sessions()
-    messageQueue = dict()# key is id of recipient 
+    messageQueue : Queue# key is id of recipient 
     users = Users()
     
     def getOnlineUsers(self) -> list:
@@ -158,33 +159,32 @@ class ChatHandler(socketserver.BaseRequestHandler):
                 userid = self.users.findByName((cliMsg.header['username']))
                 session = self.sessions.findByUserId(userid) 
                 
-                if cliMsg.type == "HELLO" and session == None:# if handshake from new cli Register new connection / session
+                if cliMsg["type"] == "HELLO" and session == None:# if handshake from new cli Register new connection / session
                     #TODO: chnage sessid to uuid
                     id = '0'
-                    self.sessions.append(Session(id=id, username=cliMsg.header['username'], ip=self.client_address[0] ))
+                    self.sessions.append(Session(id=id, username=cliMsg['username'], ip=self.client_address[0] ))
                     # send Ok to client with userID of user list of online people/IDs
                     self.sens.sendall(ServerStatusMessage("HELLO",online = self.getOnlineUsers()))
                 if session == None:
                     #error
                     pass
-                if cliMsg.type == "MESSAGE":
-                    # Store message in queue
-                    if self.sessions.findByUserId(cliMsg.recipient) == None:
+                if cliMsg["type"] == "MESSAGE":  # Store message in queue
+                    if self.sessions.findByUserId(cliMsg["recipient"]) == None:# user not logged in
                         # TODO: recip not logged on - send reponse 
                         pass
                     else:
                         # Add message to que
-                        if cliMsg.recipient in self.messageQueue.keys():
-                            if type(self.messageQueue[cliMsg.recipient]) == list:
-                                self.messageQueue[cliMsg.recipient].append(cliMsg)
+                        if id  in self.messageQueue.keys():# check if recipient has messages in queue and add to a list 
+                            if type(self.messageQueue[id]) == list:
+                                self.messageQueue[id].append(cliMsg)
                         else:
-                            self.messageQueue[cliMsg.recipient] = [cliMsg]
+                            self.messageQueue[id] = [cliMsg]
                         
                         
-                elif cliMsg.type == "BYE":
+                elif cliMsg["type"] == "BYE":
                     pass # TODO: Logout session
-                elif cliMsg.type == "PING":
-                    pass # TODO: Check for messages and send
+                elif cliMsg["type"] == "PING":
+                    pass # TODO: Check for messages and updates and send
                     
 
     def dataToMessage(self, data) -> Message:
